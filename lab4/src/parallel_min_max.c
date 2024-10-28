@@ -14,8 +14,8 @@
 #include <signal.h>
 #include <errno.h> 
 
-#include "find_min_max.h"
-#include "utils.h"
+#include "../../lab3/src/find_min_max.h"
+#include "../../lab3/src/utils.h"
 
 volatile sig_atomic_t timeout_expired = 0;
 double timeout_value = -1;
@@ -197,7 +197,7 @@ int main(int argc, char **argv) {
             }
             exit(EXIT_FAILURE);
         }
-        usleep(100000); // 100 ms
+        usleep(100000);
     }
 
     

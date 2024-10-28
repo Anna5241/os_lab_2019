@@ -1,19 +1,37 @@
 CC=gcc
-CFLAGS=-I.
+CFLAGS=-I. -I$(LAB3_SRC)
+VPATH=$(LAB3_SRC)
 
-all: parallel_min_max zombie_process
+LAB3_SRC=../../lab3/src
+
+all: parallel_min_max zombie_process process_memory parallel_sum
 
 zombie_process : zombie_process.c
 	$(CC) -o zombie_process zombie_process.c $(CFLAGS)
 
-parallel_min_max : utils.o find_min_max.o utils.h find_min_max.h
-	$(CC) -o parallel_min_max utils.o find_min_max.o parallel_min_max.c $(CFLAGS)
+process_memory : process_memory.c
+	$(CC) -o process_memory process_memory.c $(CFLAGS)
 
-utils.o : utils.h
-	$(CC) -o utils.o -c utils.c $(CFLAGS)
+parallel_min_max : $(LAB3_SRC)/utils.o $(LAB3_SRC)/find_min_max.o parallel_min_max.c
+	$(CC) -o parallel_min_max $(LAB3_SRC)/utils.o $(LAB3_SRC)/find_min_max.o parallel_min_max.c $(CFLAGS)
 
-find_min_max.o : utils.h find_min_max.h
-	$(CC) -o find_min_max.o -c find_min_max.c $(CFLAGS)
+$(LAB3_SRC)utils.o : $(LAB3_SRC)/utils.c $(LAB3_SRC)/utils.h
+	$(CC) -o $(LAB3_SRC)/utils.o -c $(LAB3_SRC)/utils.c $(CFLAGS)
+
+$(LAB3_SRC)find_min_max.o : $(LAB3_SRC)/find_min_max.c $(LAB3_SRC)/find_min_max.h
+	$(CC) -o $(LAB3_SRC)/find_min_max.o -c $(LAB3_SRC)/find_min_max.c $(CFLAGS)
+
+libutils.a: $(LAB3_SRC)/utils.o
+	ar rcs libutils.a $(LAB3_SRC)/utils.o
+
+sum_lib.o: sum_lib.c
+	$(CC) -c sum_lib.c -o sum_lib.o
+
+libsum.a: sum_lib.o
+	ar rcs libsum.a sum_lib.o
+
+parallel_sum: parallel_sum.c libsum.a libutils.a
+	$(CC) parallel_sum.c -o parallel_sum -lpthread -L. -lsum -lutils
 
 clean :
-	rm utils.o find_min_max.o parallel_min_max zombie_process
+	rm -f $(LAB3_SRC)/utils.o $(LAB3_SRC)/find_min_max.o parallel_min_max zombie_process process_memory parallel_sum libutils.a sum_lib.o libsum.a
