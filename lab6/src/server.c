@@ -11,7 +11,9 @@
 #include <sys/socket.h>
 #include <sys/types.h>
 
-#include "pthread.h"
+#include <pthread.h>
+
+#include <utils.h>
 
 struct FactorialArgs {
   uint64_t begin;
@@ -19,28 +21,16 @@ struct FactorialArgs {
   uint64_t mod;
 };
 
-uint64_t MultModulo(uint64_t a, uint64_t b, uint64_t mod) {
-  uint64_t result = 0;
-  a = a % mod;
-  while (b > 0) {
-    if (b % 2 == 1)
-      result = (result + a) % mod;
-    a = (a * 2) % mod;
-    b /= 2;
-  }
-
-  return result % mod;
-}
-
-uint64_t Factorial(const struct FactorialArgs *args) {
+uint64_t Factorial(const struct FactorialArgs *args) { // функция параллельного вычисления
   uint64_t ans = 1;
 
-  // TODO: your code here
-
+  for (uint64_t i = args->begin; i <= args->end; i++) 
+    ans = (ans * i) % args->mod;
+  
   return ans;
 }
 
-void *ThreadFactorial(void *args) {
+void *ThreadFactorial(void *args) { // вспомогательная функция
   struct FactorialArgs *fargs = (struct FactorialArgs *)args;
   return (void *)(uint64_t *)Factorial(fargs);
 }
@@ -67,11 +57,19 @@ int main(int argc, char **argv) {
       switch (option_index) {
       case 0:
         port = atoi(optarg);
-        // TODO: your code here
+        if (port <= 0)
+        {
+          fprintf(stderr, "port is positive number\n");
+          return 1;
+        }
         break;
       case 1:
         tnum = atoi(optarg);
-        // TODO: your code here
+        if (tnum <= 0)
+        {
+          fprintf(stderr, "tnum is positive number\n");
+          return 1;
+        }
         break;
       default:
         printf("Index %d is out of options\n", option_index);
@@ -91,6 +89,7 @@ int main(int argc, char **argv) {
     return 1;
   }
 
+  // открываем сокет
   int server_fd = socket(AF_INET, SOCK_STREAM, 0);
   if (server_fd < 0) {
     fprintf(stderr, "Can not create server socket!");
@@ -102,15 +101,18 @@ int main(int argc, char **argv) {
   server.sin_port = htons((uint16_t)port);
   server.sin_addr.s_addr = htonl(INADDR_ANY);
 
+  // настраиваем сокет
   int opt_val = 1;
   setsockopt(server_fd, SOL_SOCKET, SO_REUSEADDR, &opt_val, sizeof(opt_val));
 
+  // делаем bind ip адреса 
   int err = bind(server_fd, (struct sockaddr *)&server, sizeof(server));
   if (err < 0) {
     fprintf(stderr, "Can not bind to socket!");
     return 1;
   }
 
+  // прослушиваем на сокете входящие соединения
   err = listen(server_fd, 128);
   if (err < 0) {
     fprintf(stderr, "Could not listen on socket\n");
@@ -122,6 +124,7 @@ int main(int argc, char **argv) {
   while (true) {
     struct sockaddr_in client;
     socklen_t client_len = sizeof(client);
+    // принимаем запрос клиента из listen на подключение
     int client_fd = accept(server_fd, (struct sockaddr *)&client, &client_len);
 
     if (client_fd < 0) {
@@ -130,6 +133,7 @@ int main(int argc, char **argv) {
     }
 
     while (true) {
+      // читаем сообщение и распределяем нагрузку
       unsigned int buffer_size = sizeof(uint64_t) * 3;
       char from_client[buffer_size];
       int read = recv(client_fd, from_client, buffer_size, 0);
@@ -154,13 +158,15 @@ int main(int argc, char **argv) {
       memcpy(&end, from_client + sizeof(uint64_t), sizeof(uint64_t));
       memcpy(&mod, from_client + 2 * sizeof(uint64_t), sizeof(uint64_t));
 
-      fprintf(stdout, "Receive: %llu %llu %llu\n", begin, end, mod);
+      fprintf(stdout, "Receive: %lu %lu %lu\n", begin, end, mod);
 
       struct FactorialArgs args[tnum];
-      for (uint32_t i = 0; i < tnum; i++) {
-        // TODO: parallel somehow
-        args[i].begin = 1;
-        args[i].end = 1;
+      uint64_t range = (end - begin + 1) / tnum;
+
+      for (uint64_t i = 0; i < tnum; i++) {
+        // разделяем работу на потоки
+        args[i].begin = begin + i * range + 1;
+        args[i].end = (i == tnum - 1) ? end : begin + (i + 1) * range;
         args[i].mod = mod;
 
         if (pthread_create(&threads[i], NULL, ThreadFactorial,
@@ -171,14 +177,16 @@ int main(int argc, char **argv) {
       }
 
       uint64_t total = 1;
-      for (uint32_t i = 0; i < tnum; i++) {
+      for (uint64_t i = 0; i < tnum; i++) {
         uint64_t result = 0;
+        // получаем результаты с потоков
         pthread_join(threads[i], (void **)&result);
         total = MultModulo(total, result, mod);
       }
 
-      printf("Total: %llu\n", total);
+      printf("Total: %lu\n", total);
 
+      // отправляем сообщение
       char buffer[sizeof(total)];
       memcpy(buffer, &total, sizeof(total));
       err = send(client_fd, buffer, sizeof(total), 0);
@@ -187,8 +195,9 @@ int main(int argc, char **argv) {
         break;
       }
     }
-
+    // отключаем клиента
     shutdown(client_fd, SHUT_RDWR);
+    // закрываем сокет
     close(client_fd);
   }
 
